@@ -16,60 +16,84 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 2. Скачиваем бинарники Geode
-      - name: Download Geode binaries
+      # 2. Устанавливаем Geode CLI
+      - name: Install Geode CLI
         run: |
-          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
-          Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
-          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
+          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
+          $geodeDir = Split-Path $geodePath
+          echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $env:PATH += ";$geodeDir"
 
-      # 3. Копируем бинарники в SDK и подгоняем имена
-      - name: Install binaries into SDK
+      # 3. Создаём правильный профиль Geode
+      - name: Create Geode profile (correct format)
         run: |
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
+          $geodeAppData = "$env:APPDATA\Geode"
+          New-Item -ItemType Directory -Force -Path $geodeAppData
+          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
+          New-Item -ItemType Directory -Force -Path $fakeGamePath
 
-          # Копируем все .lib и .dll в обе папки
-          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
+          $config = @{
+            profiles = @(
+              @{
+                name = "default"
+                game_path = $fakeGamePath
+                sdk_path = $env:GEODE_SDK
+              }
+            )
+            active_profile = "default"
+          } | ConvertTo-Json -Depth 4
+
+          Set-Content -Path "$geodeAppData\config.json" -Value $config
+          Write-Host "=== Geode config ==="
+          Get-Content "$geodeAppData\config.json"
+
+      # 4. Устанавливаем бинарники через CLI, при неудаче — вручную
+      - name: Install Geode SDK binaries
+        run: |
+          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
+          & $geodeExe sdk install-binaries
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Failed to install binaries via CLI, trying manual download..."
+            $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
+            Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
+            Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+            # Копируем все .lib и .dll в sdk/lib и sdk/bin с правильными именами
+            New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
+            New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
+            Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
+              if ($_.Extension -eq '.lib') {
+                Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\geode.lib" -Force
+              } elseif ($_.Extension -eq '.dll') {
+                Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\geode.dll" -Force
+                Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\geode.dll" -Force
+              }
+            }
+            Write-Host "=== lib ==="
+            Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
+            Write-Host "=== bin ==="
+            Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
           }
 
-          # Если в lib один .lib, переименуем в geode.lib
-          $libFiles = Get-ChildItem "$env:GEODE_SDK\lib" -Filter *.lib
-          if ($libFiles.Count -eq 1) {
-            Rename-Item $libFiles[0].FullName -NewName "geode.lib"
-          }
-
-          # Если в bin один .dll, переименуем в geode.dll
-          $dllFiles = Get-ChildItem "$env:GEODE_SDK\bin" -Filter *.dll
-          if ($dllFiles.Count -eq 1) {
-            Rename-Item $dllFiles[0].FullName -NewName "geode.dll"
-          }
-
-          # Выведем содержимое папок для отладки
-          Write-Host "=== lib ==="
-          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
-          Write-Host "=== bin ==="
-          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
-
-      # 4. Настраиваем 32-битный MSVC
+      # 5. Настраиваем 32-битный MSVC
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 5. Конфигурируем CMake
+      # 6. Конфигурируем CMake
       - name: Configure CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      # 6. Собираем
+      # 7. Собираем
       - name: Build
         run: |
           cmake --build build --config Release
 
-      # 7. Загружаем артефакт
+      # 8. Загружаем артефакт
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
