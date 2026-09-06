@@ -10,13 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Клонируем SDK
       - name: Clone Geode SDK
         run: |
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 2. Скачиваем бинарники Geode
       - name: Download Geode binaries
         run: |
           $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
@@ -25,7 +23,6 @@ jobs:
           Write-Host "=== Full file list in geode-bin ==="
           Get-ChildItem -Path geode-bin -Recurse | ForEach-Object { $_.FullName }
 
-      # 3. Устанавливаем Geode CLI через winget
       - name: Install Geode CLI
         run: |
           winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
@@ -36,9 +33,9 @@ jobs:
           echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
           $env:PATH += ";$geodeDir"
 
-      # 4. Пытаемся установить бинарники через CLI (с правильным GEODE_HOME и профилем)
-      - name: Try to install binaries via CLI
+      - name: Try to install binaries via CLI (non-fatal)
         run: |
+          $ErrorActionPreference = 'Continue'
           $geodeAppData = "$env:APPDATA\Geode"
           New-Item -ItemType Directory -Force -Path $geodeAppData
           echo "GEODE_HOME=$geodeAppData" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -57,48 +54,45 @@ jobs:
           } | ConvertTo-Json -Depth 4
 
           Set-Content -Path "$geodeAppData\config.json" -Value $config
-          Write-Host "=== Geode config ==="
-          Get-Content "$geodeAppData\config.json"
 
           $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
           & $geodeExe sdk install-binaries
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "CLI installation failed, will use manual binaries"
+            Write-Host "CLI installation failed (exit $LASTEXITCODE), continuing with manual binaries"
           } else {
             Write-Host "CLI installation succeeded"
           }
 
-      # 5. Ручное копирование бинарников (на случай, если CLI не сработал)
       - name: Manual binary installation (fallback)
         run: |
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib\win"
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin\win"
           Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\win\" -Force
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\win\" -Force
           }
           Write-Host "=== lib after manual copy ==="
-          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
+          Get-ChildItem "$env:GEODE_SDK\lib" -Recurse | Select-Object FullName
           Write-Host "=== bin after manual copy ==="
-          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
+          Get-ChildItem "$env:GEODE_SDK\bin" -Recurse | Select-Object FullName
 
-      # 6. Настраиваем 32-битное окружение MSVC
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 7. Конфигурируем CMake (Ninja)
       - name: Configure CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      # 8. Собираем
       - name: Build
         run: |
           cmake --build build --config Release
 
-      # 9. Загружаем артефакт
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
