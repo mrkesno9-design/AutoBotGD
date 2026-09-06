@@ -15,79 +15,25 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Download Geode binaries
+      - name: Download and install Geode binaries
         run: |
           $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
           Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
           Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-          Write-Host "=== Full file list in geode-bin ==="
-          Get-ChildItem -Path geode-bin -Recurse | ForEach-Object { $_.FullName }
-
-      - name: Install Geode CLI
-        run: |
-          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
-          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
-          $geodeDir = Split-Path $geodePath
-          echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $env:PATH += ";$geodeDir"
-
-      - name: Try to install binaries via CLI (non-fatal)
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $geodeAppData = "$env:APPDATA\Geode"
-          New-Item -ItemType Directory -Force -Path $geodeAppData
-          echo "GEODE_HOME=$geodeAppData" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
-          New-Item -ItemType Directory -Force -Path $fakeGamePath
-
-          $config = @{
-            profiles = @(
-              @{
-                name = "default"
-                gamePath = $fakeGamePath
-                sdkPath = $env:GEODE_SDK
-              }
-            )
-            activeProfile = "default"
-          } | ConvertTo-Json -Depth 4
-
-          Set-Content -Path "$geodeAppData\config.json" -Value $config
-
-          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
-          & $geodeExe sdk install-binaries
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "CLI installation failed (exit $LASTEXITCODE), continuing with manual binaries"
-          } else {
-            Write-Host "CLI installation succeeded"
-          }
-
-      - name: Manual binary installation (fallback)
-        run: |
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib\win"
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin\win"
           Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\win\" -Force
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\win\" -Force
           }
-          Write-Host "=== lib after manual copy ==="
-          Get-ChildItem "$env:GEODE_SDK\lib" -Recurse | Select-Object FullName
-          Write-Host "=== bin after manual copy ==="
-          Get-ChildItem "$env:GEODE_SDK\bin" -Recurse | Select-Object FullName
+          Write-Host "=== lib ==="
+          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
+          Write-Host "=== bin ==="
+          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
 
-      - name: Setup MSVC (x86)
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x86
-
-      - name: Configure CMake
+      - name: Configure CMake (Visual Studio 18 2026, Win32)
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: |
@@ -98,3 +44,4 @@ jobs:
         with:
           name: geode-mod
           path: build/**/*.geode
+          
