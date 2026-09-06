@@ -17,41 +17,22 @@ jobs:
 
       - name: Install Geode CLI
         run: |
-          # Устанавливаем CLI через winget
           winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "winget install failed with code $LASTEXITCODE"
-            exit 1
-          }
-          # Ищем geode.exe в разных местах
-          $geodeCandidates = @(
-            "$env:USERPROFILE\AppData\Local\Microsoft\WinGet\Links\geode.exe",
-            "$env:USERPROFILE\AppData\Local\Programs\GeodeCLI\geode.exe",
-            "$env:USERPROFILE\AppData\Local\Programs\Geode\geode.exe"
-          )
-          $geodePath = $null
-          foreach ($cand in $geodeCandidates) {
-            if (Test-Path $cand) {
-              $geodePath = $cand
-              break
-            }
-          }
-          if (-not $geodePath) {
-            # Ищем рекурсивно в LocalAppData
-            $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $geodePath) {
-            # Ищем по всему диску C (может быть долго, но надёжно)
-            $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $geodePath) {
-            Write-Error "geode.exe not found anywhere"
-            exit 1
-          }
-          Write-Host "geode found at: $geodePath"
+          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
           $geodeDir = Split-Path $geodePath
           echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
           $env:PATH += ";$geodeDir"
+
+      - name: Setup Geode profile
+        run: |
+          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
+          # Создаём фиктивную папку для игры (нужна для профиля)
+          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
+          New-Item -ItemType Directory -Force -Path $fakeGamePath
+          # Создаём профиль с указанием пути и принятием условий
+          & $geodeExe config setup --global --default --game-path $fakeGamePath --accept
 
       - name: Install Geode SDK binaries
         run: |
