@@ -15,28 +15,15 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Install 7-Zip
+      - name: Download Geode binaries
         run: |
-          winget install --id 7zip.7zip --accept-source-agreements --accept-package-agreements
-          $7zPath = "C:\Program Files\7-Zip\7z.exe"
-          if (-not (Test-Path $7zPath)) {
-            $7zPath = "C:\Program Files (x86)\7-Zip\7z.exe"
-          }
-          if (-not (Test-Path $7zPath)) {
-            Write-Error "7z not found"
-            exit 1
-          }
-          echo "SEVENZIP=$7zPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Download and extract Geode binaries
-        run: |
-          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-installer-v5.10.1-win.exe"
-          Invoke-WebRequest -Uri $url -OutFile geode-installer.exe
-          & $env:SEVENZIP x geode-installer.exe -ogeode-bin -y
-          # Создаём папки bin и lib в SDK
+          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
+          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+          # Создаём папки bin и lib внутри SDK
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
-          # Копируем все файлы из распакованного установщика
+          # Копируем все распакованные файлы в bin и lib
           Copy-Item -Path "geode-bin\*" -Destination "$env:GEODE_SDK\bin\" -Recurse -Force
           Copy-Item -Path "geode-bin\*" -Destination "$env:GEODE_SDK\lib\" -Recurse -Force
 
