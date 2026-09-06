@@ -10,57 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone Geode SDK
-        run: |
-          git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
-          echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Install Geode CLI
-        run: |
-          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
-          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
-          $geodeDir = Split-Path $geodePath
-          echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $env:PATH += ";$geodeDir"
-
-      - name: Create Geode profile
-        run: |
-          $profileDir = "$env:APPDATA\Geode"
-          New-Item -ItemType Directory -Force -Path $profileDir
-          $profileJson = @"
-          {
-            "profiles": [
-              {
-                "name": "default",
-                "gamePath": "$env:GITHUB_WORKSPACE\fake_game",
-                "sdkPath": "$env:GEODE_SDK"
-              }
-            ]
-          }
-          "@
-          Set-Content -Path "$profileDir\profiles.json" -Value $profileJson
-          # Создаём фиктивную папку игры (если ещё нет)
-          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\fake_game"
-
-      - name: Install Geode SDK binaries
-        run: |
-          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
-          & $geodeExe sdk install-binaries
-
-      - name: Setup MSVC (x86)
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Build Geode Mod
+        uses: geode-sdk/build-geode-mod@v1
         with:
-          arch: x86
-
-      - name: Configure CMake
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: |
-          cmake --build build --config Release
+          build-config: Release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
