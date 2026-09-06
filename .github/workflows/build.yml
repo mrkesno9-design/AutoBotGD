@@ -1,22 +1,17 @@
 name: Build Geode Mod
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build Geode Mod
+      - name: Build Geode mod
         uses: geode-sdk/build-geode-mod@v1
         with:
-          build-config: Release   # конфигурация сборки
-          arch: x86              # 32-битная архитектура
-          upload-artifact: false # отключаем встроенную загрузку (устаревший v3)
-
+          build-config: Release
+          arch: x86
+          upload-artifact: false
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
