@@ -25,27 +25,17 @@ jobs:
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
           }
-          # Переименовываем файлы в нижний регистр (если нужно)
-          Get-ChildItem "$env:GEODE_SDK\lib" -Filter "Geode.*" | ForEach-Object {
-            $newName = $_.Name.ToLower()
-            Rename-Item $_.FullName -NewName $newName -Force
-          }
-          Get-ChildItem "$env:GEODE_SDK\bin" -Filter "Geode.*" | ForEach-Object {
-            $newName = $_.Name.ToLower()
-            Rename-Item $_.FullName -NewName $newName -Force
-          }
-          # Выводим содержимое для отладки
+          # Переименовываем Geode.lib и Geode.dll в geode.lib и geode.dll
+          Get-ChildItem "$env:GEODE_SDK\lib" -Filter "Geode.lib" | Rename-Item -NewName "geode.lib" -Force
+          Get-ChildItem "$env:GEODE_SDK\lib" -Filter "Geode.dll" | Rename-Item -NewName "geode.dll" -Force
+          Get-ChildItem "$env:GEODE_SDK\bin" -Filter "Geode.lib" | Rename-Item -NewName "geode.lib" -Force
+          Get-ChildItem "$env:GEODE_SDK\bin" -Filter "Geode.dll" | Rename-Item -NewName "geode.dll" -Force
           Write-Host "lib:"; Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
           Write-Host "bin:"; Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
 
-      - name: Patch CMakeLists (Win64 -> Win32)
+      - name: Configure CMake (skip codegen)
         run: |
-          $cmakeFile = "$env:GEODE_SDK\CMakeLists.txt"
-          (Get-Content $cmakeFile) -replace "'Win64'", "'Win32'" | Set-Content $cmakeFile
-
-      - name: Configure CMake
-        run: |
-          cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release -DSKIP_BUILDING_CODEGEN=ON
 
       - name: Build
         run: |
