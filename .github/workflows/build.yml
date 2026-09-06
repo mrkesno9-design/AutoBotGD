@@ -28,23 +28,10 @@ jobs:
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
           }
-          # Создаём копии с нижним регистром, если имена с заглавными буквами
-          $libDir = "$env:GEODE_SDK\lib"
-          $binDir = "$env:GEODE_SDK\bin"
-          foreach ($file in @("Geode.lib","Geode.dll")) {
-            $src = Join-Path $libDir $file
-            if (Test-Path $src) {
-              Copy-Item $src -Destination (Join-Path $libDir $file.ToLower()) -Force
-            }
-            $src = Join-Path $binDir $file
-            if (Test-Path $src) {
-              Copy-Item $src -Destination (Join-Path $binDir $file.ToLower()) -Force
-            }
-          }
           Write-Host "=== lib ==="
-          Get-ChildItem $libDir | Select-Object Name
+          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
           Write-Host "=== bin ==="
-          Get-ChildItem $binDir | Select-Object Name
+          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
 
       # 3. Настраиваем 32-битное окружение MSVC
       - name: Setup MSVC (x86)
