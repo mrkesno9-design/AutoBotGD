@@ -10,72 +10,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Клонируем Geode SDK (заголовки и CMake-скрипты)
       - name: Clone Geode SDK
         run: |
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 2. Скачиваем официальные бинарники Geode (DLL и LIB)
       - name: Download Geode binaries
         run: |
           $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
           Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
           Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-          Write-Host "=== Files in geode-bin ==="
-          Get-ChildItem -Path geode-bin -Recurse | ForEach-Object { $_.FullName }
 
-      # 3. Устанавливаем бинарники в SDK (создаём папки lib и bin, копируем с нужными именами)
       - name: Install binaries into SDK
         run: |
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
-          # Копируем все .lib и .dll из архива в обе папки
           Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
           }
-          # Если есть файлы с заглавными буквами, делаем копии с маленькими (на всякий случай)
-          $libDir = "$env:GEODE_SDK\lib"
-          $binDir = "$env:GEODE_SDK\bin"
-          foreach ($dir in @($libDir, $binDir)) {
-            foreach ($src in @("Geode.lib","Geode.dll")) {
-              $srcPath = Join-Path $dir $src
-              if (Test-Path $srcPath) {
-                $lower = $src.ToLower()
-                Copy-Item $srcPath -Destination (Join-Path $dir $lower) -Force
-              }
-            }
-          }
           Write-Host "=== lib ==="
-          Get-ChildItem $libDir | Select-Object Name
+          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
           Write-Host "=== bin ==="
-          Get-ChildItem $binDir | Select-Object Name
+          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
 
-      # 4. Патчим SDK CMakeLists, чтобы Codegen использовал Win32
       - name: Patch CMakeLists for Win32
         run: |
           $cmakeFile = "$env:GEODE_SDK\CMakeLists.txt"
           (Get-Content $cmakeFile) -replace "'Win64'", "'Win32'" | Set-Content $cmakeFile
-          Write-Host "Patched CMakeLists.txt"
 
-      # 5. Настраиваем 32-битное окружение MSVC (на всякий случай)
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 6. Конфигурируем CMake с генератором Visual Studio 18 2026 (Win32)
       - name: Configure CMake
         run: |
           cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release
 
-      # 7. Собираем
       - name: Build
         run: |
           cmake --build build --config Release
 
-      # 8. Загружаем артефакт
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
