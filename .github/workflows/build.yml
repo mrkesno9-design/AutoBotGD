@@ -15,25 +15,56 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Download and install Geode binaries
+      - name: Download Geode binaries
         run: |
           $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
           Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
           Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
-          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
-          }
-          Write-Host "=== lib ==="
-          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
-          Write-Host "=== bin ==="
-          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
 
-      - name: Configure CMake (Visual Studio 18 2026, Win32)
+      - name: Install binaries everywhere
         run: |
-          cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release
+          $sdk = "$env:GEODE_SDK"
+          $dirs = @(
+            "$sdk",
+            "$sdk\lib",
+            "$sdk\bin",
+            "$sdk\lib\win32",
+            "$sdk\bin\win32"
+          )
+          foreach ($d in $dirs) {
+            New-Item -ItemType Directory -Force -Path $d
+            Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll,*.pdb | ForEach-Object {
+              Copy-Item $_.FullName -Destination "$d\" -Force
+            }
+            # Создаём копии с альтернативными именами
+            foreach ($srcName in @("Geode.dll","Geode.lib","XInput1_4.dll")) {
+              $src = Join-Path $d $srcName
+              if (Test-Path $src) {
+                # Копируем как geode.dll, geode.lib, GeodeLoader.dll, GeodeLoader.lib
+                $base = [System.IO.Path]::GetFileNameWithoutExtension($src)
+                $ext = [System.IO.Path]::GetExtension($src)
+                $aliases = @("geode$ext", "GeodeLoader$ext", "geode_loader$ext")
+                foreach ($alias in $aliases) {
+                  Copy-Item $src -Destination (Join-Path $d $alias) -Force
+                }
+                # Если это .dll, создаём .lib с тем же именем? Не нужно.
+              }
+            }
+          }
+
+      - name: Patch CMakeLists to use Win32
+        run: |
+          $cmakeFile = "$env:GEODE_SDK\CMakeLists.txt"
+          (Get-Content $cmakeFile) -replace "'Win64'", "'Win32'" | Set-Content $cmakeFile
+
+      - name: Setup MSVC (x86)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: |
@@ -44,4 +75,3 @@ jobs:
         with:
           name: geode-mod
           path: build/**/*.geode
-          
