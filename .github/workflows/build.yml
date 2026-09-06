@@ -16,62 +16,60 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 2. Устанавливаем Geode CLI
-      - name: Install Geode CLI
+      # 2. Скачиваем бинарники Geode
+      - name: Download Geode binaries
         run: |
-          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
-          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
-          $geodeDir = Split-Path $geodePath
-          echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $env:PATH += ";$geodeDir"
+          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
+          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
 
-      # 3. Создаём правильный конфиг Geode (config.json)
-      - name: Create Geode config
+      # 3. Копируем бинарники в SDK и подгоняем имена
+      - name: Install binaries into SDK
         run: |
-          $geodeAppData = "$env:APPDATA\Geode"
-          New-Item -ItemType Directory -Force -Path $geodeAppData
-          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
-          New-Item -ItemType Directory -Force -Path $fakeGamePath
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
 
-          $config = @{
-            profiles = @(
-              @{
-                name = "default"
-                gamePath = $fakeGamePath
-                sdkPath = $env:GEODE_SDK
-              }
-            )
-            activeProfile = "default"
-          } | ConvertTo-Json -Depth 3
+          # Копируем все .lib и .dll в обе папки
+          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
+          }
 
-          Set-Content -Path "$geodeAppData\config.json" -Value $config
-          Write-Host "Geode config created at $geodeAppData\config.json"
+          # Если в lib один .lib, переименуем в geode.lib
+          $libFiles = Get-ChildItem "$env:GEODE_SDK\lib" -Filter *.lib
+          if ($libFiles.Count -eq 1) {
+            Rename-Item $libFiles[0].FullName -NewName "geode.lib"
+          }
 
-      # 4. Устанавливаем бинарники Geode
-      - name: Install Geode SDK binaries
-        run: |
-          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
-          & $geodeExe sdk install-binaries
+          # Если в bin один .dll, переименуем в geode.dll
+          $dllFiles = Get-ChildItem "$env:GEODE_SDK\bin" -Filter *.dll
+          if ($dllFiles.Count -eq 1) {
+            Rename-Item $dllFiles[0].FullName -NewName "geode.dll"
+          }
 
-      # 5. Настраиваем 32-битный MSVC
+          # Выведем содержимое папок для отладки
+          Write-Host "=== lib ==="
+          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
+          Write-Host "=== bin ==="
+          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
+
+      # 4. Настраиваем 32-битный MSVC
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 6. Конфигурируем CMake
+      # 5. Конфигурируем CMake
       - name: Configure CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      # 7. Собираем
+      # 6. Собираем
       - name: Build
         run: |
           cmake --build build --config Release
 
-      # 8. Загружаем артефакт
+      # 7. Загружаем артефакт
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
