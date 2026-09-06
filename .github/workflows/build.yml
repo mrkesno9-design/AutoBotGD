@@ -27,7 +27,7 @@ jobs:
           echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
           $env:PATH += ";$geodeDir"
 
-      # 3. Создаём правильный профиль Geode
+      # 3. Создаём правильный профиль Geode (camelCase)
       - name: Create Geode profile (correct format)
         run: |
           $geodeAppData = "$env:APPDATA\Geode"
@@ -39,11 +39,11 @@ jobs:
             profiles = @(
               @{
                 name = "default"
-                game_path = $fakeGamePath
-                sdk_path = $env:GEODE_SDK
+                gamePath = $fakeGamePath
+                sdkPath = $env:GEODE_SDK
               }
             )
-            active_profile = "default"
+            activeProfile = "default"
           } | ConvertTo-Json -Depth 4
 
           Set-Content -Path "$geodeAppData\config.json" -Value $config
@@ -60,16 +60,12 @@ jobs:
             $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
             Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
             Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-            # Копируем все .lib и .dll в sdk/lib и sdk/bin с правильными именами
+            # Копируем все .lib и .dll в sdk/lib и sdk/bin без переименования
             New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
             New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
             Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
-              if ($_.Extension -eq '.lib') {
-                Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\geode.lib" -Force
-              } elseif ($_.Extension -eq '.dll') {
-                Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\geode.dll" -Force
-                Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\geode.dll" -Force
-              }
+              Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
+              Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
             }
             Write-Host "=== lib ==="
             Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
