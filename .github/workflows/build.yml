@@ -15,6 +15,26 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Install Geode CLI
+        run: |
+          $url = "https://github.com/geode-sdk/cli/releases/latest/download/geode-cli-win.zip"
+          try {
+            Invoke-WebRequest -Uri $url -OutFile geode-cli.zip
+          } catch {
+            Write-Host "Failed to download CLI from geode-sdk/cli, trying alternative..."
+            $url = "https://github.com/geode-sdk/geode/releases/latest/download/geode-cli-win.zip"
+            Invoke-WebRequest -Uri $url -OutFile geode-cli.zip
+          }
+          Expand-Archive -Path geode-cli.zip -DestinationPath geode-cli
+          $cliPath = Get-ChildItem -Path geode-cli -Recurse -Filter geode.exe | Select-Object -First 1 -ExpandProperty DirectoryName
+          if (-not $cliPath) { Write-Error "geode.exe not found"; exit 1 }
+          echo "GEODE_CLI_PATH=$cliPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $env:PATH = "$env:PATH;$cliPath"
+
+      - name: Install Geode SDK binaries
+        run: |
+          & "$env:GEODE_CLI_PATH\geode.exe" sdk install-binaries
+
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
