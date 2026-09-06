@@ -6,12 +6,51 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Geode mod
-        uses: geode-sdk/build-geode-mod@v1
-        with:
-          build-config: Release
-          arch: x86
-          upload-artifact: false
+
+      - name: Clone Geode SDK
+        run: |
+          git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
+          echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download Geode binaries
+        run: |
+          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
+          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+
+      - name: Prepare SDK folders and copy binaries
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib", "$env:GEODE_SDK\bin"
+          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
+          }
+          # Переименовываем файлы в нижний регистр (если нужно)
+          Get-ChildItem "$env:GEODE_SDK\lib" -Filter "Geode.*" | ForEach-Object {
+            $newName = $_.Name.ToLower()
+            Rename-Item $_.FullName -NewName $newName -Force
+          }
+          Get-ChildItem "$env:GEODE_SDK\bin" -Filter "Geode.*" | ForEach-Object {
+            $newName = $_.Name.ToLower()
+            Rename-Item $_.FullName -NewName $newName -Force
+          }
+          # Выводим содержимое для отладки
+          Write-Host "lib:"; Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
+          Write-Host "bin:"; Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
+
+      - name: Patch CMakeLists (Win64 -> Win32)
+        run: |
+          $cmakeFile = "$env:GEODE_SDK\CMakeLists.txt"
+          (Get-Content $cmakeFile) -replace "'Win64'", "'Win32'" | Set-Content $cmakeFile
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
