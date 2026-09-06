@@ -10,15 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Geode CLI
+      - name: Clone Geode SDK
         run: |
-          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          refreshenv
-          $env:PATH = "$env:PATH;C:\Users\runneradmin\AppData\Local\Microsoft\WinGet\Links"
-
-      - name: Install Geode SDK
-        run: |
-          geode sdk install
+          git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
+          echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Configure CMake
         run: |
