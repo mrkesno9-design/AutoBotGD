@@ -28,7 +28,7 @@ jobs:
           $env:PATH += ";$geodeDir"
 
       # 3. Создаём правильный профиль Geode (camelCase)
-      - name: Create Geode profile (correct format)
+      - name: Create Geode profile
         run: |
           $geodeAppData = "$env:APPDATA\Geode"
           New-Item -ItemType Directory -Force -Path $geodeAppData
@@ -50,7 +50,7 @@ jobs:
           Write-Host "=== Geode config ==="
           Get-Content "$geodeAppData\config.json"
 
-      # 4. Устанавливаем бинарники через CLI, при неудаче — вручную
+      # 4. Устанавливаем бинарники через CLI, при неудаче — вручную с переименованием
       - name: Install Geode SDK binaries
         run: |
           $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
@@ -60,17 +60,27 @@ jobs:
             $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
             Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
             Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-            # Копируем все .lib и .dll в sdk/lib и sdk/bin без переименования
             New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
             New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
             Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
               Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
               Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
             }
+            # Переименовываем файлы в нижний регистр, если они с заглавными буквами
+            $libDir = "$env:GEODE_SDK\lib"
+            $binDir = "$env:GEODE_SDK\bin"
+            Get-ChildItem $libDir -Filter "Geode.lib" | Rename-Item -NewName "geode.lib"
+            Get-ChildItem $libDir -Filter "Geode.dll" | Rename-Item -NewName "geode.dll"
+            Get-ChildItem $binDir -Filter "Geode.lib" | Rename-Item -NewName "geode.lib"
+            Get-ChildItem $binDir -Filter "Geode.dll" | Rename-Item -NewName "geode.dll"
+            # Удаляем лишние файлы (XInput1_4.dll), если они есть
+            Get-ChildItem $libDir -Filter "XInput1_4.dll" | Remove-Item -Force
+            Get-ChildItem $binDir -Filter "XInput1_4.dll" | Remove-Item -Force
+
             Write-Host "=== lib ==="
-            Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
+            Get-ChildItem $libDir | Select-Object Name
             Write-Host "=== bin ==="
-            Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
+            Get-ChildItem $binDir | Select-Object Name
           }
 
       # 5. Настраиваем 32-битный MSVC
