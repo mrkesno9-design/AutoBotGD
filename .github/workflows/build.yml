@@ -10,47 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone Geode SDK
-        run: |
-          git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
-          echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Download Geode binaries
-        run: |
-          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
-          Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
-          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-
-      - name: Install binaries into SDK
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
-          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
-          }
-          Write-Host "=== lib ==="
-          Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
-          Write-Host "=== bin ==="
-          Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
-
-      - name: Patch CMakeLists for Win32
-        run: |
-          $cmakeFile = "$env:GEODE_SDK\CMakeLists.txt"
-          (Get-Content $cmakeFile) -replace "'Win64'", "'Win32'" | Set-Content $cmakeFile
-
-      - name: Setup MSVC (x86)
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Build Geode Mod
+        uses: geode-sdk/build-geode-mod@v1
         with:
-          arch: x86
-
-      - name: Configure CMake
-        run: |
-          cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: |
-          cmake --build build --config Release
+          build-config: Release   # конфигурация сборки
+          arch: x86              # 32-битная архитектура
+          upload-artifact: false # отключаем встроенную загрузку (устаревший v3)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
