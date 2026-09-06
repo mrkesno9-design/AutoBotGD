@@ -15,26 +15,23 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Install Geode CLI via winget
+      - name: Download Geode binaries
         run: |
-          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          # Добавляем возможные пути в PATH
-          $env:PATH += ";$env:USERPROFILE\AppData\Local\Microsoft\WinGet\Links"
-          $env:PATH += ";$env:USERPROFILE\AppData\Local\Programs\GeodeCLI"
-          $env:PATH += ";$env:USERPROFILE\AppData\Local\Programs\Geode"
-          # Ищем geode.exe
-          $geode = Get-Command geode -ErrorAction SilentlyContinue
-          if (-not $geode) {
-            $geodePath = Get-ChildItem -Path C:\Users\runneradmin\AppData\Local -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
-            if ($geodePath) { $env:PATH += ";$geodePath" }
+          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
+          try {
+            Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
+          } catch {
+            Write-Host "Trying alternative URL..."
+            $url = "https://github.com/geode-sdk/geode/releases/latest/download/geode-v5.10.1-win.zip"
+            Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
           }
-          # Проверяем
-          geode --version
-          if ($LASTEXITCODE -ne 0) { Write-Error "geode not found"; exit 1 }
-
-      - name: Install Geode SDK binaries
-        run: |
-          geode sdk install-binaries
+          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+          # Создаём папку bin внутри SDK и копируем туда все файлы
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
+          Copy-Item -Path "geode-bin\*" -Destination "$env:GEODE_SDK\bin\" -Recurse -Force
+          # Также копируем в lib на всякий случай
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
+          Copy-Item -Path "geode-bin\*" -Destination "$env:GEODE_SDK\lib\" -Recurse -Force
 
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
