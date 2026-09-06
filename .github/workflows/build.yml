@@ -25,12 +25,24 @@ jobs:
           echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
           $env:PATH += ";$geodeDir"
 
-      - name: Setup Geode profile
+      - name: Create Geode profile
         run: |
-          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
-          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
-          New-Item -ItemType Directory -Force -Path $fakeGamePath
-          & $geodeExe config setup --game-path $fakeGamePath --accept
+          $profileDir = "$env:APPDATA\Geode"
+          New-Item -ItemType Directory -Force -Path $profileDir
+          $profileJson = @"
+          {
+            "profiles": [
+              {
+                "name": "default",
+                "gamePath": "$env:GITHUB_WORKSPACE\fake_game",
+                "sdkPath": "$env:GEODE_SDK"
+              }
+            ]
+          }
+          "@
+          Set-Content -Path "$profileDir\profiles.json" -Value $profileJson
+          # Создаём фиктивную папку игры (если ещё нет)
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\fake_game"
 
       - name: Install Geode SDK binaries
         run: |
