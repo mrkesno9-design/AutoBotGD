@@ -22,34 +22,83 @@ jobs:
           $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
           Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
           Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+          Write-Host "=== Full file list in geode-bin ==="
+          Get-ChildItem -Path geode-bin -Recurse | ForEach-Object { $_.FullName }
+
+      # 3. Устанавливаем Geode CLI через winget
+      - name: Install Geode CLI
+        run: |
+          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
+          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
+          $geodeDir = Split-Path $geodePath
+          echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $env:PATH += ";$geodeDir"
+
+      # 4. Пытаемся установить бинарники через CLI (с правильным GEODE_HOME и профилем)
+      - name: Try to install binaries via CLI
+        run: |
+          $geodeAppData = "$env:APPDATA\Geode"
+          New-Item -ItemType Directory -Force -Path $geodeAppData
+          echo "GEODE_HOME=$geodeAppData" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
+          New-Item -ItemType Directory -Force -Path $fakeGamePath
+
+          $config = @{
+            profiles = @(
+              @{
+                name = "default"
+                gamePath = $fakeGamePath
+                sdkPath = $env:GEODE_SDK
+              }
+            )
+            activeProfile = "default"
+          } | ConvertTo-Json -Depth 4
+
+          Set-Content -Path "$geodeAppData\config.json" -Value $config
+          Write-Host "=== Geode config ==="
+          Get-Content "$geodeAppData\config.json"
+
+          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
+          & $geodeExe sdk install-binaries
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "CLI installation failed, will use manual binaries"
+          } else {
+            Write-Host "CLI installation succeeded"
+          }
+
+      # 5. Ручное копирование бинарников (на случай, если CLI не сработал)
+      - name: Manual binary installation (fallback)
+        run: |
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
           New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
           Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
             Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
           }
-          Write-Host "=== lib ==="
+          Write-Host "=== lib after manual copy ==="
           Get-ChildItem "$env:GEODE_SDK\lib" | Select-Object Name
-          Write-Host "=== bin ==="
+          Write-Host "=== bin after manual copy ==="
           Get-ChildItem "$env:GEODE_SDK\bin" | Select-Object Name
 
-      # 3. Настраиваем 32-битное окружение MSVC
+      # 6. Настраиваем 32-битное окружение MSVC
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 4. Конфигурируем CMake с генератором NMake (использует текущее окружение)
+      # 7. Конфигурируем CMake (Ninja)
       - name: Configure CMake
         run: |
-          cmake -S . -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      # 5. Собираем
+      # 8. Собираем
       - name: Build
         run: |
           cmake --build build --config Release
 
-      # 6. Загружаем артефакт
+      # 9. Загружаем артефакт
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
