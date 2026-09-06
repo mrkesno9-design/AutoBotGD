@@ -1,7 +1,7 @@
 name: Build Geode Mod
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -9,13 +9,28 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Geode Mod
-        uses: geode-sdk/build-geode-mod-action@v1
-        with:
-          build-config: Release
+
+      - name: Install Geode CLI
+        run: |
+          $url = "https://github.com/geode-sdk/geode/releases/latest/download/geode-cli-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile geode-cli.zip
+          Expand-Archive -Path geode-cli.zip -DestinationPath geode-cli
+          $env:PATH = "$env:PATH;$PWD\geode-cli"
+
+      - name: Install Geode SDK
+        run: |
+          geode sdk install
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: geode-mod
-          path: build/**.geode
-          
+          path: build/**/*.geode
