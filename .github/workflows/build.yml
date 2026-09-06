@@ -12,10 +12,9 @@ jobs:
 
       - name: Install Geode CLI
         run: |
-          $url = "https://github.com/geode-sdk/geode/releases/latest/download/geode-cli-win.zip"
-          Invoke-WebRequest -Uri $url -OutFile geode-cli.zip
-          Expand-Archive -Path geode-cli.zip -DestinationPath geode-cli
-          $env:PATH = "$env:PATH;$PWD\geode-cli"
+          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
+          refreshenv
+          $env:PATH = "$env:PATH;C:\Users\runneradmin\AppData\Local\Microsoft\WinGet\Links"
 
       - name: Install Geode SDK
         run: |
