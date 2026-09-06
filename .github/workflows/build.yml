@@ -16,90 +16,53 @@ jobs:
           git clone --depth 1 https://github.com/geode-sdk/sdk.git sdk
           echo "GEODE_SDK=$env:GITHUB_WORKSPACE\sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 2. Устанавливаем Geode CLI
-      - name: Install Geode CLI
+      # 2. Скачиваем бинарники Geode
+      - name: Download Geode binaries
         run: |
-          winget install --id GeodeSDK.GeodeCLI --accept-source-agreements --accept-package-agreements
-          $geodePath = Get-ChildItem -Path "$env:USERPROFILE\AppData\Local" -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $geodePath) { $geodePath = Get-ChildItem -Path C:\ -Filter geode.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
-          if (-not $geodePath) { Write-Error "geode.exe not found"; exit 1 }
-          $geodeDir = Split-Path $geodePath
-          echo "GEODE_CLI_DIR=$geodeDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $env:PATH += ";$geodeDir"
-
-      # 3. Создаём правильный профиль Geode (camelCase)
-      - name: Create Geode profile
-        run: |
-          $geodeAppData = "$env:APPDATA\Geode"
-          New-Item -ItemType Directory -Force -Path $geodeAppData
-          $fakeGamePath = "$env:GITHUB_WORKSPACE\fake_game"
-          New-Item -ItemType Directory -Force -Path $fakeGamePath
-
-          $config = @{
-            profiles = @(
-              @{
-                name = "default"
-                gamePath = $fakeGamePath
-                sdkPath = $env:GEODE_SDK
-              }
-            )
-            activeProfile = "default"
-          } | ConvertTo-Json -Depth 4
-
-          Set-Content -Path "$geodeAppData\config.json" -Value $config
-          Write-Host "=== Geode config ==="
-          Get-Content "$geodeAppData\config.json"
-
-      # 4. Устанавливаем бинарники через CLI, при неудаче — вручную с переименованием
-      - name: Install Geode SDK binaries
-        run: |
-          $geodeExe = Join-Path $env:GEODE_CLI_DIR "geode.exe"
-          & $geodeExe sdk install-binaries
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to install binaries via CLI, trying manual download..."
-            $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
-            Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
-            Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
-            New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
-            New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
-            Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
-              Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
-              Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
-            }
-            # Переименовываем файлы в нижний регистр, если они с заглавными буквами
-            $libDir = "$env:GEODE_SDK\lib"
-            $binDir = "$env:GEODE_SDK\bin"
-            Get-ChildItem $libDir -Filter "Geode.lib" | Rename-Item -NewName "geode.lib"
-            Get-ChildItem $libDir -Filter "Geode.dll" | Rename-Item -NewName "geode.dll"
-            Get-ChildItem $binDir -Filter "Geode.lib" | Rename-Item -NewName "geode.lib"
-            Get-ChildItem $binDir -Filter "Geode.dll" | Rename-Item -NewName "geode.dll"
-            # Удаляем лишние файлы (XInput1_4.dll), если они есть
-            Get-ChildItem $libDir -Filter "XInput1_4.dll" | Remove-Item -Force
-            Get-ChildItem $binDir -Filter "XInput1_4.dll" | Remove-Item -Force
-
-            Write-Host "=== lib ==="
-            Get-ChildItem $libDir | Select-Object Name
-            Write-Host "=== bin ==="
-            Get-ChildItem $binDir | Select-Object Name
+          $url = "https://github.com/geode-sdk/geode/releases/download/v5.10.1/geode-v5.10.1-win.zip"
+          Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
+          Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib"
+          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\bin"
+          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
+            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
           }
+          # Создаём копии с нижним регистром, если имена с заглавными буквами
+          $libDir = "$env:GEODE_SDK\lib"
+          $binDir = "$env:GEODE_SDK\bin"
+          foreach ($file in @("Geode.lib","Geode.dll")) {
+            $src = Join-Path $libDir $file
+            if (Test-Path $src) {
+              Copy-Item $src -Destination (Join-Path $libDir $file.ToLower()) -Force
+            }
+            $src = Join-Path $binDir $file
+            if (Test-Path $src) {
+              Copy-Item $src -Destination (Join-Path $binDir $file.ToLower()) -Force
+            }
+          }
+          Write-Host "=== lib ==="
+          Get-ChildItem $libDir | Select-Object Name
+          Write-Host "=== bin ==="
+          Get-ChildItem $binDir | Select-Object Name
 
-      # 5. Настраиваем 32-битный MSVC
+      # 3. Настраиваем 32-битное окружение MSVC
       - name: Setup MSVC (x86)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 6. Конфигурируем CMake
+      # 4. Конфигурируем CMake с генератором NMake (использует текущее окружение)
       - name: Configure CMake
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
 
-      # 7. Собираем
+      # 5. Собираем
       - name: Build
         run: |
           cmake --build build --config Release
 
-      # 8. Загружаем артефакт
+      # 6. Загружаем артефакт
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
