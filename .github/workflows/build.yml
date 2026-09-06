@@ -18,25 +18,28 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile geode-bin.zip
           Expand-Archive -Path geode-bin.zip -DestinationPath geode-bin
 
-      - name: Prepare SDK folders and copy binaries
+      - name: Copy binaries to all possible SDK locations
         run: |
-          New-Item -ItemType Directory -Force -Path "$env:GEODE_SDK\lib", "$env:GEODE_SDK\bin"
-          Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\lib\" -Force
-            Copy-Item $_.FullName -Destination "$env:GEODE_SDK\bin\" -Force
+          $sdk = "$env:GEODE_SDK"
+          $destDirs = @(
+            "$sdk\lib",
+            "$sdk\lib\win32",
+            "$sdk\lib\x86",
+            "$sdk\bin",
+            "$sdk\bin\win32",
+            "$sdk\bin\x86"
+          )
+          foreach ($d in $destDirs) {
+            New-Item -ItemType Directory -Force -Path $d
+            # Копируем все файлы из архива (сохраняя исходные имена)
+            Get-ChildItem -Path geode-bin -Recurse -Include *.lib,*.dll | ForEach-Object {
+              Copy-Item $_.FullName -Destination "$d\" -Force
+            }
           }
-          Get-ChildItem "$env:GEODE_SDK\lib" -Filter "Geode.lib" | Rename-Item -NewName "geode.lib" -Force
-          Get-ChildItem "$env:GEODE_SDK\lib" -Filter "Geode.dll" | Rename-Item -NewName "geode.dll" -Force
-          Get-ChildItem "$env:GEODE_SDK\bin" -Filter "Geode.lib" | Rename-Item -NewName "geode.lib" -Force
-          Get-ChildItem "$env:GEODE_SDK\bin" -Filter "Geode.dll" | Rename-Item -NewName "geode.dll" -Force
 
-      - name: Patch SDK CMakeLists to disable Codegen
+      - name: Set Codegen platform
         run: |
-          $cmakeFile = "$env:GEODE_SDK\CMakeLists.txt"
-          # Заменяем Win64 на Win32
-          (Get-Content $cmakeFile) -replace "'Win64'", "'Win32'" | Set-Content $cmakeFile
-          # Заменяем вызов Codegen на заглушку
-          (Get-Content $cmakeFile) -replace 'execute_process\([^)]*Codegen\.exe[^)]*\)', 'message(STATUS "Codegen disabled")' | Set-Content $cmakeFile
+          echo "GEODE_CODEGEN_PLATFORM=Win32" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Configure CMake
         run: |
